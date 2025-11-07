@@ -28,11 +28,11 @@ In this tutorial we use a single host TPUVM such as `v6e-8/v5p-8`. Let's get sta
 ## Setup your virtual environment
 
 ### Create a Python3.12 venv if not already pre-existing and install MaxText dependencies
-```
-bash setup.sh
+```sh
+bash tools/setup/setup.sh
 ```
 
-### Activate your virtual environment (Skip if you have already done this for running `bash setup.sh` )
+### Activate your virtual environment (Skip if you have already done this for running `bash tools/setup/setup.sh` )
 ```
 # Replace with your virtual environment name if not using this default name
 venv_name="maxtext_venv"
@@ -58,9 +58,17 @@ We use the scheduler code from vLLM, and the model runner code from `tpu_commons
 
 ## Run GRPO
 
-Finally, run the script
+Finally, run the command
 
-`python ~/maxtext/src/MaxText/examples/grpo_llama3_1_8b_demo.py`
+```
+python3 -m src.MaxText.rl.train_rl src/MaxText/configs/rl.yml \
+  --model_name=llama3.1-8b \
+  --tokenizer_path=meta-llama/Llama-3.1-8B-Instruct \
+  --load_parameters_path=gs://path/to/checkpoint/0/items \
+  --run_name=$WORKLOAD \
+  --base_output_directory=$OUTPUT_PATH \
+  --hf_access_token=$HF_TOKEN
+```
 
 The overview of the demo script is as follows:
 

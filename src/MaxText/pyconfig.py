@@ -208,6 +208,15 @@ def validate_rampup_batch_size(batch_size_start, batch_size_end, batch_size_incr
   )
 
 
+def validate_context_parallel_strategy_ring(
+    context_parallel_size: int, context_parallel_strategy: str, hardware: str
+) -> None:
+  """Validates that ring context parallelism strategy is only used on GPU hardware."""
+  if context_parallel_size > 1 and context_parallel_strategy.lower() == "ring":
+    if "gpu" not in hardware:
+      raise ValueError("Ring context parallelism strategy (context_parallel_strategy='ring') is only supported on GPUs.")
+
+
 def validate_keys(keys):
   validate_attention_kernel(keys["attention"])
   validate_attention_type(keys["attention_type"])
@@ -237,6 +246,10 @@ def validate_keys(keys):
   # TODO remove after b/435512699 resolved
   if keys["context_parallel_size"] > 1 and keys["context_parallel_load_balance"] and keys["attention_type"] == "chunk":
     raise ValueError("Currently load-balanced context parallelism is not supported for chunk attention.")
+
+  validate_context_parallel_strategy_ring(
+      keys["context_parallel_size"], keys["context_parallel_strategy"], keys["hardware"]
+  )
 
   if keys["mtp_eval_target_module"] < 0:
     raise ValueError("mtp_eval_target_module cannot be negative. Set to 0 to disable evaluation.")
@@ -303,10 +316,10 @@ def validate_keys(keys):
     validate_llama4_config(keys)
 
   if keys["decoder_block"] == "qwen3_next":
-    if keys["sparse_matmul"]:
-      raise ValueError(
-          "For Qwen3-Next, sparse_matmul must be False for now. The dense path has been verified against reference."
-      )
+    validate_qwen3_next_config(keys)
+  else:
+    if keys["partial_rotary_factor"] is not None and keys["partial_rotary_factor"] != 1.0:
+      raise ValueError("`partial_rotary_factor` is only effective when `decoder_block` is set to 'qwen3_next'.")
 
   if keys["shard_optimizer_over_data"]:
     validate_optimizer_sharding_over_data(keys)
@@ -413,6 +426,23 @@ def validate_llama4_config(keys: dict):
     )
 
 
+def validate_qwen3_next_config(keys: dict):
+  """
+  Validates the following checks for Qwen3 Next:
+
+  Args:
+    keys: the raw config in dict form
+
+  """
+  if keys["sparse_matmul"]:
+    raise ValueError(
+        "For Qwen3-Next, sparse_matmul must be False for now. The dense path has been verified against reference."
+    )
+  rotary_dim = int(keys["head_dim"] * keys["partial_rotary_factor"])
+  if rotary_dim % 2 != 0:
+    raise ValueError(f"Calculated rotary dimension ({rotary_dim}) must be a multiple of 2.")
+
+
 def validate_model_name(s: str) -> bool:
   """Validate provided model name."""
   # currently supported models
@@ -454,6 +484,7 @@ def validate_model_name(s: str) -> bool:
       "qwen3-30b-a3b",
       "qwen3-480b-a35b",
       "qwen3-next-80b-a3b",
+      "qwen3-omni-30b-a3b",
       "gpt3-175b",
       "gpt3-22b",
       "gpt3-6b",
@@ -1379,8 +1410,12 @@ def using_sequence_parallelism(raw_keys) -> bool:
 
 
 def using_expert_parallelism(raw_keys) -> bool:
-  if int(raw_keys["ici_expert_parallelism"]) > 1 and int(raw_keys["dcn_expert_parallelism"]) > 1:
-    raise ValueError("Expert parallelism can only be enabled on ICI or DCN, not both.")
+  if (
+      int(raw_keys["ici_expert_parallelism"]) > 1
+      and int(raw_keys["dcn_expert_parallelism"]) > 1
+      and raw_keys["hardware"] == "tpu"
+  ):
+    raise ValueError("Expert parallelism can only be enabled on ICI or DCN on TPU, not both.")
   return int(raw_keys["ici_expert_parallelism"]) > 1 or int(raw_keys["dcn_expert_parallelism"]) > 1
 
 

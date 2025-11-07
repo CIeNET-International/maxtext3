@@ -18,6 +18,9 @@ run_name: ""
 
 model_name: "default" # override config settings to match a specific model. other than the override, nothing should use this!
 override_model_config: False # When set to true allows overriding model parameters via CLI for the purpose of debugging/testing.
+debug:
+  rl: False # RL-specific debugging
+
 normalization_layer_epsilon: 1.e-05 # epsilon value for rmsnorm, layernorm.
 
 ################################## CHECKPOINTING ##################################
@@ -47,6 +50,7 @@ enable_checkpointing: True
 save_checkpoint_on_completion: True
 async_checkpointing: True
 checkpoint_period: 10_000
+max_num_checkpoints_to_keep: None
 # enables one replica to read the ckpt then broadcast to the rest
 enable_single_replica_ckpt_restoring: False
 
@@ -149,6 +153,7 @@ logits_dot_in_fp32: False  # whether to use fp32 in logits_dense or shared_embed
 cast_logits_to_fp32: True # whether to cast the logits to fp32. The higher precision is generally beneficial, but it can vary slightly.
 float32_qk_product: False # in dot_product attention, whether to cast to fp32 the inputs to qk product
 float32_logits: False # in dot_product attention, whether to cast to fp32 the inputs to softmax
+float32_weight_sum: True # whether to use full fp32 precision for weight_sum during final unpermute in moe
 
 # Multi-Token Prediction Configs
 # The number of auxiliary prediction layers to use for MTP.
@@ -470,7 +475,8 @@ ici_expert_parallelism: 1
 # Enable ZeRO-1 optimizer sharding over data axis
 shard_optimizer_over_data: False
 
-# The number of TPU slices is automatically determined, you should not set this explicitly. For ahead of time compilation,
+# Unless explicitly specified, the number of TPU slices is automatically determined. It should only be set for
+# disaggregated reinforcement learning workloads using multiple slices. For ahead of time compilation,
 # you should set compile_toplogy_num_slices, which will in turn set this value. For non-TPU environments this is set to 1.
 num_slices: -1
 
@@ -494,6 +500,11 @@ tokenize_train_data: True  # False if the dataset is pre-tokenized
 tokenize_eval_data: True  # False if the dataset is pre-tokenized
 add_bos: True
 add_eos: True
+# If False, use chunking for long sequences instead of truncation.
+# Note: use_truncation=False is only available in grain's pretrain preprocessing pipeline.
+# See the TokenizeAndTrim and TokenizeAndChunk classes in
+# `src/MaxText/input_pipeline/_grain_tokenizer.py` for implementation details.
+use_truncation: True
 
 # Dataset
 per_device_batch_size: 12.0
@@ -512,6 +523,11 @@ packing: True
 num_epoch: 1  # only grain and tfds pipeline supports num_epoch > 1
 generate_padding_batch_train: False
 generate_padding_batch_eval: False
+# Maximum number of segments that can be packed into a single sequence
+# This needs to be passed to TransformerEngine's DotProductAttention layer for packing
+# NOTE: This parameter is only relevant for GPU packed attention.
+# When using TPU, this parameter will be ignored.
+max_segments_per_seq: 32
 # Rampup batch size, similar to Megatron-LM, see
 # https://github.com/NVIDIA/Megatron-LM/blob/2a01637aa54ccdaf7ea9afc1f1b80f58c53d7f3c/megatron/core/num_microbatches_calculator.py#L233-L237
 # The ramp-up proceeds in stages from `per_device_batch_size_start` up to
@@ -807,6 +823,7 @@ cost_estimate_flops_bwd: -1 # -1 means using splash default cost estmiation, any
 dq_reduction_steps: 0 #the number of reduction steps. For now, only 3 or all the kv steps are supported.
 ### Determine if we want to use load balance for context parallelism
 context_parallel_load_balance: True
+context_parallel_strategy: "all_gather" # "all_gather" or "ring"
 
 ### Paged Attention ###
 # These settings take effect only when `attention=paged`.
@@ -899,6 +916,8 @@ gdn_num_value_heads: 32
 gdn_chunk_size: 64
 # Whether to apply L2 normalization to query and key tensors inside the Gated Delta Rule kernel.
 use_qk_norm_in_gdn: True
+# The ratio of dimension to apply ROPE on
+partial_rotary_factor: 1.0
 
 # Use tokamax library for gmm kernel implementation
 use_tokamax_gmm: false
