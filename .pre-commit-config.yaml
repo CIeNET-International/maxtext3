@@ -10,6 +10,8 @@ repos:
           - '-w'
           - '--skip="*.txt,pylintrc,.*,src/MaxText/assets/*"'
           - '-L ND,nd,sems,TE,ROUGE,rouge,astroid,ags,dout'
+          - '-s'
+          - '--count'
           - '.'
         additional_dependencies:
           - tomli
